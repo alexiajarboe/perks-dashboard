@@ -46,10 +46,16 @@
   .count { color: var(--muted); font-size: 14px; width: 100%; }
 
   nav.cats { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 8px; }
-  nav.cats a {
-    font-size: 13px; text-decoration: none; color: var(--accent); background: var(--accent-soft);
-    padding: 4px 10px; border-radius: 999px;
+  nav.cats button {
+    font: inherit; font-size: 13px; color: var(--accent); background: var(--accent-soft);
+    padding: 4px 10px; border: 0; border-radius: 999px; cursor: pointer;
   }
+  nav.cats button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .toggle {
+    display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  }
+  .toggle input { width: 16px; height: 16px; margin: 0; accent-color: var(--free); }
 
   section { margin-top: 32px; scroll-margin-top: 130px; }
   section h2 { font-size: 19px; margin: 0 0 12px; display: flex; gap: 8px; align-items: baseline; }
@@ -85,7 +91,9 @@
       <button data-scope="all" aria-pressed="true">All</button>
       <button data-scope="national" aria-pressed="false">National</button>
       <button data-scope="san_diego" aria-pressed="false">San Diego</button>
+      <button data-scope="sdsu" aria-pressed="false">SDSU only</button>
     </div>
+    <label class="toggle"><input id="free" type="checkbox"> Free only</label>
     <div class="count" id="count"></div>
   </div>
 
@@ -99,8 +107,17 @@
   const SUPABASE_URL = "https://lkwarswrixuopvhzqwpl.supabase.co";
   const SUPABASE_KEY = "sb_publishable_bIWmS90ED9OTK3G698f2EA_0Cnv1ifL";
 
+  // These categories always appear first, in this order; the rest follow by size.
+  const PINNED = ["Food & Drink", "Transit & Travel", "Campus Services", "Streaming & Music"];
+
   let perks = [];
   let scope = "all";
+  let category = null; // null = all categories
+
+  const isFree = (p) => /^free$/i.test(p.cost || "");
+  const inScope = (p) =>
+    scope === "all" ||
+    (scope === "sdsu" ? p.eligibility === "SDSU student" : p.scope === scope);
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -122,21 +139,31 @@
 
   function render() {
     const q = document.getElementById("search").value.trim().toLowerCase();
-    const shown = perks.filter((p) =>
-      (scope === "all" || p.scope === scope) &&
+    const freeOnly = document.getElementById("free").checked;
+    const matching = perks.filter((p) =>
+      inScope(p) && (!freeOnly || isFree(p)) &&
       (!q || [p.name, p.provider, p.offer, p.category, p.eligibility].join(" ").toLowerCase().includes(q))
     );
 
     const groups = {};
-    for (const p of shown) (groups[p.category || "Other"] ||= []).push(p);
-    const cats = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length || a.localeCompare(b));
+    for (const p of matching) (groups[p.category || "Other"] ||= []).push(p);
+    const rank = (c) => (PINNED.includes(c) ? PINNED.indexOf(c) : PINNED.length);
+    const cats = Object.keys(groups).sort((a, b) =>
+      rank(a) - rank(b) || groups[b].length - groups[a].length || a.localeCompare(b));
+
+    // Keep a selected chip visible even if other filters leave it empty.
+    if (category && !groups[category]) groups[category] = [];
+    const visible = category ? [category] : cats;
+    const shownCount = visible.reduce((n, c) => n + groups[c].length, 0);
 
     document.getElementById("count").textContent =
-      `Showing ${shown.length} of ${perks.length} perks in ${cats.length} categories`;
+      `Showing ${shownCount} of ${perks.length} perks` + (category ? ` in ${category}` : ` in ${cats.length} categories`);
     document.getElementById("cats").innerHTML =
-      cats.map((c) => `<a href="#${slug(c)}">${esc(c)} (${groups[c].length})</a>`).join("");
+      `<button data-cat="" aria-pressed="${!category}">All categories</button>` +
+      cats.concat(category && !cats.includes(category) ? [category] : []).map((c) =>
+        `<button data-cat="${esc(c)}" aria-pressed="${c === category}">${esc(c)} (${groups[c].length})</button>`).join("");
 
-    document.getElementById("list").innerHTML = cats.length ? cats.map((c) => `
+    document.getElementById("list").innerHTML = shownCount ? visible.filter((c) => groups[c].length).map((c) => `
       <section id="${slug(c)}">
         <h2>${esc(c)} <span>${groups[c].length}</span></h2>
         <div class="grid">${groups[c].map(card).join("")}</div>
@@ -145,21 +172,29 @@
 
   function card(p) {
     const link = safeLink(p.link);
-    const isFree = /^free$/i.test(p.cost || "");
     return `<article class="card">
       <h3>${esc(p.name)}</h3>
       ${p.provider && p.provider !== p.name ? `<div class="provider">${esc(p.provider)}</div>` : ""}
       <p class="offer">${esc(p.offer)}</p>
       ${p.eligibility ? `<div class="elig">Who: ${esc(p.eligibility)}</div>` : ""}
       <div class="tags">
-        ${p.cost ? `<span class="tag ${isFree ? "free" : ""}">${esc(p.cost)}</span>` : ""}
-        ${p.scope === "san_diego" ? `<span class="tag local">San Diego</span>` : ""}
+        ${p.cost ? `<span class="tag ${isFree(p) ? "free" : ""}">${esc(p.cost)}</span>` : ""}
+        ${p.eligibility === "SDSU student" ? `<span class="tag local">SDSU</span>`
+          : p.scope === "san_diego" ? `<span class="tag local">San Diego</span>` : ""}
         ${link ? `<a class="go" href="${esc(link)}" target="_blank" rel="noopener">Get it →</a>` : ""}
       </div>
     </article>`;
   }
 
   document.getElementById("search").addEventListener("input", render);
+  document.getElementById("free").addEventListener("change", render);
+  // Clicking a chip shows only that category; clicking it again (or "All") clears it.
+  document.getElementById("cats").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-cat]");
+    if (!b) return;
+    category = b.dataset.cat && b.dataset.cat !== category ? b.dataset.cat : null;
+    render();
+  });
   document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
     scope = b.dataset.scope;
     document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", x === b));
