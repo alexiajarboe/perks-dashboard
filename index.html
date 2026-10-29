@@ -4,7 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Student Perks Dashboard</title>
-<meta name="description" content="Free and discounted perks for students, grouped by category.">
+<meta name="description" content="160+ free and discounted student perks, from SDSU campus services to dev tools, with how much you save on each.">
+
+<!-- Link preview card for texts and social apps -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Student Perks Dashboard">
+<meta property="og:url" content="https://student-perks-dashboard.vercel.app/">
+<meta property="og:title" content="Student Perks Dashboard">
+<meta property="og:description" content="160+ free and discounted student perks, from SDSU campus services to dev tools, with how much you save on each.">
+<meta property="og:image" content="https://student-perks-dashboard.vercel.app/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Student Perks Dashboard: 160+ student perks, 100+ free, 14 SDSU only, $68K+ potential savings">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Student Perks Dashboard">
+<meta name="twitter:description" content="160+ free and discounted student perks, from SDSU campus services to dev tools, with how much you save on each.">
+<meta name="twitter:image" content="https://student-perks-dashboard.vercel.app/og-image.png">
+<meta name="twitter:image:alt" content="Student Perks Dashboard: 160+ student perks, 100+ free, 14 SDSU only, $68K+ potential savings">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -172,11 +188,22 @@
   .deal.free { background: var(--free-soft); color: var(--free); }
   .deal.disc { background: var(--disc-soft); color: var(--disc); }
   .deal.paid { background: var(--paid-soft); color: var(--paid); }
-  .deal-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-  .saving { display: flex; flex-direction: column; line-height: 1.2; }
-  .saving b { font-size: 17px; font-weight: 800; color: var(--teal); letter-spacing: -.01em; }
-  .saving small { font-size: 12px; color: var(--muted); }
-  .saving.varies b { font-size: 14px; font-weight: 700; color: var(--muted); }
+  .saving {
+    display: flex; gap: 10px; align-items: flex-start; line-height: 1.25;
+    padding: 10px 12px; border-radius: 12px; background: var(--teal-soft);
+  }
+  .saving > svg { width: 20px; height: 20px; flex: none; color: var(--teal); margin-top: 1px; }
+  .sv-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .sv-main b { font-size: 17px; font-weight: 800; color: var(--teal); letter-spacing: -.01em; }
+  .sv-total {
+    font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap;
+    background: var(--card); border: 1px solid color-mix(in srgb, var(--teal) 35%, transparent);
+    padding: 1px 8px; border-radius: 999px;
+  }
+  .saving small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  .saving.varies { background: var(--paid-soft); }
+  .saving.varies > svg, .saving.varies b { color: var(--muted); }
+  .saving.varies b { font-size: 14px; font-weight: 700; }
   .offer { margin: 0; color: var(--text); }
   .elig { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; color: var(--muted); }
   .elig svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
@@ -263,7 +290,8 @@
 
 <main class="wrap" id="list"><div class="status">Loading perks…</div></main>
 <footer>Perks load live from the database, so new ones show up automatically.<br>
-  Savings = (regular price − student price) × how many times you'd pay during the deal. Perks whose pricing is flagged as unreliable show "Savings vary" and aren't counted in the total.</footer>
+  Savings = regular price − student price, per month or year. The long-term total covers the promo length when the deal has an end date, otherwise 4 years of college.
+  Perks whose pricing is flagged as unreliable show "Savings vary" and aren't counted in the total.</footer>
 
 <script>
   // Supabase connection. The publishable key is designed to be public;
@@ -348,8 +376,11 @@
   }
 
   // ---------- Savings ----------
-  // Savings = (regular - student) x number of times you'd pay during the deal.
-  // Flagged pricing rows are unreliable, so they get no dollar amount.
+  // Per-period savings = regular - student (e.g. "$12/mo").
+  // Long-term savings = per-period savings x periods in the deal: the promo length when the
+  // deal has an end date, otherwise 4 years of college (48 months).
+  // Flagged pricing rows are unreliable, so they get no dollar amount — except
+  // "duration_not_stated", where only the end date is missing and the 4-year rule applies.
   const FLAG_TEXT = {
     percent_off_no_fixed_price: "percent-off deal, depends on what you buy",
     fixed_dollar_off_no_fixed_price: "depends on your order",
@@ -370,35 +401,38 @@
   };
   const PER_USE = { per_visit: "per visit", per_ticket: "per ticket", per_order: "per order" };
   const PERIOD_SHORT = { month: "/mo", year: "/yr" };
+  const COLLEGE_MONTHS = 48;
+  const NO_END_DATE_FLAGS = ["duration_not_stated"];
 
   function savingsFor(pr) {
     if (!pr) return null;
-    if (pr.flagged) {
-      const reason = (pr.flag_reason || "").split(";").map((r) => FLAG_TEXT[r]).find(Boolean);
+    const flags = (pr.flag_reason || "").split(";").filter(Boolean);
+    const noEndDateOnly = flags.length > 0 && flags.every((f) => NO_END_DATE_FLAGS.includes(f));
+    if (pr.flagged && !noEndDateOnly) {
+      const reason = flags.map((r) => FLAG_TEXT[r]).find(Boolean);
       return { varies: true, reason: reason || "pricing unclear" };
     }
     const diff = (pr.regular_cost ?? NaN) - (pr.student_cost ?? NaN);
     if (!(diff > 0)) return null;
-    const months = pr.duration_months;
-    let amount = null;
-    if (pr.cost_period === "month" && months) amount = diff * months;
-    else if (pr.cost_period === "year") amount = diff * Math.max(1, (months || 12) / 12);
-    else if (pr.cost_period === "one_time") amount = diff;
-    else if (PER_USE[pr.cost_period]) return { perUse: diff, unit: PER_USE[pr.cost_period], pricing: pr };
-    return amount ? { amount, pricing: pr } : null;
+    const base = { perPeriod: diff, pricing: pr };
+    if (pr.cost_period === "one_time") return { ...base, amount: diff, basis: "once" };
+    if (PER_USE[pr.cost_period]) return { ...base, perUse: true, unit: PER_USE[pr.cost_period] };
+    if (!PERIOD_SHORT[pr.cost_period]) return null;
+
+    // A limited promo with a stated length uses that length; anything else lasts through college.
+    const promo = pr.duration_type === "limited" && pr.duration_months && !noEndDateOnly;
+    const months = promo ? pr.duration_months : COLLEGE_MONTHS;
+    const periods = pr.cost_period === "month" ? months : months / 12;
+    return { ...base, amount: diff * periods, months, basis: promo ? "promo" : "college" };
   }
 
   const money = (n) => "$" + n.toLocaleString("en-US",
     { minimumFractionDigits: n < 100 && n % 1 ? 2 : 0, maximumFractionDigits: n < 100 ? 2 : 0 });
-  const span = (m) => m >= 12 && m % 12 === 0 ? `${m / 12} year${m > 12 ? "s" : ""}` : `${m} month${m > 1 ? "s" : ""}`;
 
-  function savingsDetail(s) {
-    const pr = s.pricing;
-    const normally = `normally ${money(pr.regular_cost)}${PERIOD_SHORT[pr.cost_period] || ""}`;
-    if (s.perUse) return normally;
-    if (pr.cost_period === "one_time") return `one-time, ${normally}`;
-    const m = pr.duration_months || 12;
-    return `over ${span(m)}, ${normally}`;
+  function longTerm(s) {
+    if (s.basis === "college") return `${money(s.amount)} over 4 years of college`;
+    if (s.basis === "promo") return `${money(s.amount)} over the ${s.months}-month promo`;
+    return "";
   }
 
   // Sort key for "Biggest savings": dollar amounts first, then per-use, then none, then "varies".
@@ -461,7 +495,7 @@
     if (sortBy === "savings") {
       // Biggest savers first inside each category; categories with the most total savings first.
       const total = (c) => groups[c].reduce((n, p) => n + (p.save?.amount || 0), 0);
-      for (const c in groups) groups[c].sort((a, b) => saveRank(b) - saveRank(a) || (b.save?.perUse || 0) - (a.save?.perUse || 0));
+      for (const c in groups) groups[c].sort((a, b) => saveRank(b) - saveRank(a) || (b.save?.perPeriod || 0) - (a.save?.perPeriod || 0));
       cats = Object.keys(groups).sort((a, b) => total(b) - total(a) || a.localeCompare(b));
     } else {
       cats = Object.keys(groups).sort((a, b) =>
@@ -524,10 +558,8 @@
           ${p.provider && p.provider !== p.name ? `<div class="provider">${esc(p.provider)}</div>` : ""}
         </div>
       </div>
-      <div class="deal-row">
-        ${p.cost ? `<div class="deal ${dealKind(p)}">${esc(p.cost)}</div>` : ""}
-        ${savingsLine(p.save)}
-      </div>
+      ${p.cost ? `<div class="deal ${dealKind(p)}">${esc(p.cost)}</div>` : ""}
+      ${savingsLine(p.save)}
       <p class="offer">${esc(p.offer)}</p>
       ${p.eligibility ? `<div class="elig">${icon("user-check")}<span>${esc(p.eligibility)}</span></div>` : ""}
       <div class="foot">
@@ -540,9 +572,15 @@
 
   function savingsLine(s) {
     if (!s) return "";
-    if (s.varies) return `<div class="saving varies"><b>Savings vary</b><small>${esc(s.reason)}</small></div>`;
-    const headline = s.perUse ? `Save ${money(s.perUse)} ${s.unit}` : `Save ${money(s.amount)}`;
-    return `<div class="saving"><b>${headline}</b><small>${esc(savingsDetail(s))}</small></div>`;
+    if (s.varies) return `<div class="saving varies">${icon("circle-help")}<div>
+      <b>Savings vary</b><small>${esc(s.reason)}</small></div></div>`;
+    const pr = s.pricing;
+    const per = s.perUse ? ` ${s.unit}` : s.basis === "once" ? " one-time" : PERIOD_SHORT[pr.cost_period];
+    const total = longTerm(s);
+    return `<div class="saving">${icon("piggy-bank")}<div>
+      <div class="sv-main"><b>Save ${money(s.perPeriod)}${per}</b>${total ? `<span class="sv-total">${total}</span>` : ""}</div>
+      <small>Normally ${money(pr.regular_cost)}${PERIOD_SHORT[pr.cost_period] || ""}, students pay ${pr.student_cost ? money(pr.student_cost) : "$0"}</small>
+    </div></div>`;
   }
 
   function setScope(s) {
