@@ -61,7 +61,7 @@
   .hero h1 { margin: 14px 0 6px; font-size: clamp(30px, 6vw, 48px); line-height: 1.05; font-weight: 800; letter-spacing: -.03em; }
   .hero h1 em { font-style: normal; color: #ff5a6e; }
   .hero p { margin: 0; max-width: 560px; color: rgba(255, 255, 255, .78); font-size: 16px; }
-  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 28px; max-width: 640px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 28px; max-width: 860px; }
   .stat {
     text-align: left; color: #fff; cursor: pointer;
     background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .14);
@@ -74,6 +74,8 @@
   .stat.free b { color: #7ef0b0; }
   .stat.sdsu b { color: #ff7a8a; }
   .stat.total b { color: #9ff0ec; }
+  .stat.save { background: rgba(14, 140, 140, .28); border-color: rgba(159, 240, 236, .45); }
+  .stat.save b { color: #fff; }
 
   /* ---------- Pinned filter bar ---------- */
   .bar {
@@ -105,6 +107,17 @@
     padding: 8px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
   }
   .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .sort {
+    display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px;
+    padding: 0 4px 0 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+  }
+  .sort svg { width: 16px; height: 16px; color: var(--muted); flex: none; }
+  .sort select {
+    font: inherit; font-weight: 600; color: var(--text); background: transparent; border: 0;
+    padding: 8px 4px; cursor: pointer;
+  }
+  .sort select:focus { outline: none; }
+  .sort:focus-within { outline: 2px solid var(--teal); }
   .switch { width: 34px; height: 20px; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; flex: none; }
   .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s; }
   .toggle input:checked + .switch { background: var(--free); }
@@ -159,6 +172,11 @@
   .deal.free { background: var(--free-soft); color: var(--free); }
   .deal.disc { background: var(--disc-soft); color: var(--disc); }
   .deal.paid { background: var(--paid-soft); color: var(--paid); }
+  .deal-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .saving { display: flex; flex-direction: column; line-height: 1.2; }
+  .saving b { font-size: 17px; font-weight: 800; color: var(--teal); letter-spacing: -.01em; }
+  .saving small { font-size: 12px; color: var(--muted); }
+  .saving.varies b { font-size: 14px; font-weight: 700; color: var(--muted); }
   .offer { margin: 0; color: var(--text); }
   .elig { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; color: var(--muted); }
   .elig svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
@@ -188,7 +206,7 @@
 
   @media (max-width: 640px) {
     .hero .wrap { padding-top: 28px; padding-bottom: 24px; }
-    .stats { gap: 8px; margin-top: 20px; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 20px; }
     .stat { padding: 10px 12px; border-radius: 14px; }
     .stat span { font-size: 12px; }
     .search { flex-basis: 100%; }
@@ -212,6 +230,7 @@
       <button class="stat total" data-stat="all"><b id="s-total">–</b><span>Total perks</span></button>
       <button class="stat free" data-stat="free"><b id="s-free">–</b><span>Totally free</span></button>
       <button class="stat sdsu" data-stat="sdsu"><b id="s-sdsu">–</b><span>SDSU only</span></button>
+      <button class="stat save" data-stat="save"><b id="s-save">–</b><span>Potential savings over your degree</span></button>
     </div>
   </div>
 </header>
@@ -230,6 +249,12 @@
         <button data-scope="sdsu" aria-pressed="false">SDSU only</button>
       </div>
       <label class="toggle"><input id="free" type="checkbox"><span class="switch"></span> Free only</label>
+      <label class="sort"><i data-lucide="arrow-down-wide-narrow"></i>
+        <select id="sort" aria-label="Sort perks">
+          <option value="default">Sort: Recommended</option>
+          <option value="savings">Sort: Biggest savings</option>
+        </select>
+      </label>
     </div>
     <nav class="chips" id="cats" aria-label="Categories"></nav>
     <div class="count" id="count"></div>
@@ -237,7 +262,8 @@
 </div>
 
 <main class="wrap" id="list"><div class="status">Loading perks…</div></main>
-<footer>Perks load live from the database, so new ones show up automatically.</footer>
+<footer>Perks load live from the database, so new ones show up automatically.<br>
+  Savings = (regular price − student price) × how many times you'd pay during the deal. Perks whose pricing is flagged as unreliable show "Savings vary" and aren't counted in the total.</footer>
 
 <script>
   // Supabase connection. The publishable key is designed to be public;
@@ -321,8 +347,66 @@
     } catch { return null; }
   }
 
+  // ---------- Savings ----------
+  // Savings = (regular - student) x number of times you'd pay during the deal.
+  // Flagged pricing rows are unreliable, so they get no dollar amount.
+  const FLAG_TEXT = {
+    percent_off_no_fixed_price: "percent-off deal, depends on what you buy",
+    fixed_dollar_off_no_fixed_price: "depends on your order",
+    no_regular_price: "no regular price to compare",
+    regular_price_not_found: "no regular price to compare",
+    no_comparable_regular_price: "no regular price to compare",
+    regular_price_unverified: "regular price not verified",
+    plan_not_comparable: "plans aren't directly comparable",
+    price_varies_by_plan: "price varies by plan",
+    price_varies_by_product: "price varies by product",
+    price_varies_by_school: "price varies by school",
+    price_varies_by_usage: "price varies by usage",
+    usage_based_pricing: "pay-as-you-go pricing",
+    non_usd_price: "priced in euros",
+    duration_not_stated: "deal length not stated",
+    price_period_unclear: "billing period unclear",
+    not_sdsu_eligible: "not available to SDSU students",
+  };
+  const PER_USE = { per_visit: "per visit", per_ticket: "per ticket", per_order: "per order" };
+  const PERIOD_SHORT = { month: "/mo", year: "/yr" };
+
+  function savingsFor(pr) {
+    if (!pr) return null;
+    if (pr.flagged) {
+      const reason = (pr.flag_reason || "").split(";").map((r) => FLAG_TEXT[r]).find(Boolean);
+      return { varies: true, reason: reason || "pricing unclear" };
+    }
+    const diff = (pr.regular_cost ?? NaN) - (pr.student_cost ?? NaN);
+    if (!(diff > 0)) return null;
+    const months = pr.duration_months;
+    let amount = null;
+    if (pr.cost_period === "month" && months) amount = diff * months;
+    else if (pr.cost_period === "year") amount = diff * Math.max(1, (months || 12) / 12);
+    else if (pr.cost_period === "one_time") amount = diff;
+    else if (PER_USE[pr.cost_period]) return { perUse: diff, unit: PER_USE[pr.cost_period], pricing: pr };
+    return amount ? { amount, pricing: pr } : null;
+  }
+
+  const money = (n) => "$" + n.toLocaleString("en-US",
+    { minimumFractionDigits: n < 100 && n % 1 ? 2 : 0, maximumFractionDigits: n < 100 ? 2 : 0 });
+  const span = (m) => m >= 12 && m % 12 === 0 ? `${m / 12} year${m > 12 ? "s" : ""}` : `${m} month${m > 1 ? "s" : ""}`;
+
+  function savingsDetail(s) {
+    const pr = s.pricing;
+    const normally = `normally ${money(pr.regular_cost)}${PERIOD_SHORT[pr.cost_period] || ""}`;
+    if (s.perUse) return normally;
+    if (pr.cost_period === "one_time") return `one-time, ${normally}`;
+    const m = pr.duration_months || 12;
+    return `over ${span(m)}, ${normally}`;
+  }
+
+  // Sort key for "Biggest savings": dollar amounts first, then per-use, then none, then "varies".
+  const saveRank = (p) => p.save?.amount ?? (p.save?.perUse ? -1 : p.save?.varies ? -3 : -2);
+
   let perks = [];
   let scope = "all";
+  let sortBy = "default";
   let category = null;          // null = all categories
   const expanded = new Set();   // categories showing all perks
 
@@ -337,14 +421,24 @@
 
   async function load() {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/perks?select=*&order=category,name`, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      });
+      const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+      const [res, pricingRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/perks?select=*&order=category,name`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/perk_pricing?select=*`, { headers }).catch(() => null),
+      ]);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       perks = await res.json();
+      // Pricing is optional: if it fails to load, the dashboard still works without savings.
+      const pricing = pricingRes && pricingRes.ok ? await pricingRes.json() : [];
+      const byPerk = new Map(pricing.map((r) => [r.perk_id, r]));
+      for (const p of perks) p.save = savingsFor(byPerk.get(p.id));
+
       document.getElementById("s-total").textContent = perks.length;
       document.getElementById("s-free").textContent = perks.filter(isFree).length;
       document.getElementById("s-sdsu").textContent = perks.filter(isSdsu).length;
+      document.getElementById("s-save").textContent = pricing.length
+        ? money(Math.round(perks.reduce((n, p) => n + (p.save?.amount || 0), 0)))
+        : "–";
       render();
     } catch (err) {
       document.getElementById("list").innerHTML =
@@ -363,8 +457,16 @@
     const groups = {};
     for (const p of matching) (groups[p.category || "Other"] ||= []).push(p);
     const rank = (c) => (PINNED.includes(c) ? PINNED.indexOf(c) : PINNED.length);
-    const cats = Object.keys(groups).sort((a, b) =>
-      rank(a) - rank(b) || groups[b].length - groups[a].length || a.localeCompare(b));
+    let cats;
+    if (sortBy === "savings") {
+      // Biggest savers first inside each category; categories with the most total savings first.
+      const total = (c) => groups[c].reduce((n, p) => n + (p.save?.amount || 0), 0);
+      for (const c in groups) groups[c].sort((a, b) => saveRank(b) - saveRank(a) || (b.save?.perUse || 0) - (a.save?.perUse || 0));
+      cats = Object.keys(groups).sort((a, b) => total(b) - total(a) || a.localeCompare(b));
+    } else {
+      cats = Object.keys(groups).sort((a, b) =>
+        rank(a) - rank(b) || groups[b].length - groups[a].length || a.localeCompare(b));
+    }
 
     // Keep a selected chip visible even if other filters leave it empty.
     if (category && !groups[category]) groups[category] = [];
@@ -422,7 +524,10 @@
           ${p.provider && p.provider !== p.name ? `<div class="provider">${esc(p.provider)}</div>` : ""}
         </div>
       </div>
-      ${p.cost ? `<div class="deal ${dealKind(p)}">${esc(p.cost)}</div>` : ""}
+      <div class="deal-row">
+        ${p.cost ? `<div class="deal ${dealKind(p)}">${esc(p.cost)}</div>` : ""}
+        ${savingsLine(p.save)}
+      </div>
       <p class="offer">${esc(p.offer)}</p>
       ${p.eligibility ? `<div class="elig">${icon("user-check")}<span>${esc(p.eligibility)}</span></div>` : ""}
       <div class="foot">
@@ -433,6 +538,13 @@
     </article>`;
   }
 
+  function savingsLine(s) {
+    if (!s) return "";
+    if (s.varies) return `<div class="saving varies"><b>Savings vary</b><small>${esc(s.reason)}</small></div>`;
+    const headline = s.perUse ? `Save ${money(s.perUse)} ${s.unit}` : `Save ${money(s.amount)}`;
+    return `<div class="saving"><b>${headline}</b><small>${esc(savingsDetail(s))}</small></div>`;
+  }
+
   function setScope(s) {
     scope = s;
     document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", x.dataset.scope === s));
@@ -440,12 +552,15 @@
 
   document.getElementById("search").addEventListener("input", render);
   document.getElementById("free").addEventListener("change", render);
+  document.getElementById("sort").addEventListener("change", (e) => { sortBy = e.target.value; render(); });
   document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => { setScope(b.dataset.scope); render(); }));
 
   // Header stats double as shortcuts.
   document.querySelectorAll(".stat").forEach((b) => b.addEventListener("click", () => {
     const s = b.dataset.stat;
     document.getElementById("free").checked = s === "free";
+    sortBy = s === "save" ? "savings" : sortBy;
+    document.getElementById("sort").value = sortBy;
     setScope(s === "sdsu" ? "sdsu" : "all");
     category = null;
     render();
