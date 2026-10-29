@@ -153,9 +153,25 @@
   .chips button[data-cat=""] { padding-left: 12px; }
   .count { font-size: 13px; color: var(--muted); margin-top: 8px; }
 
+  /* ---------- My savings ---------- */
+  .mine {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin-top: 10px;
+    padding: 8px 12px; border-radius: 12px; background: var(--teal-soft);
+    border: 1px solid color-mix(in srgb, var(--teal) 30%, transparent);
+  }
+  .mine > svg { width: 20px; height: 20px; color: var(--teal); flex: none; }
+  .mine-label { font-weight: 700; font-size: 14px; }
+  .mine b { font-size: 20px; font-weight: 800; letter-spacing: -.02em; color: var(--teal); }
+  .mine-note { font-size: 13px; color: var(--muted); }
+  .mine button {
+    margin-left: auto; padding: 4px 10px; font-size: 13px; font-weight: 700; cursor: pointer;
+    color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .mine button:hover { color: var(--text); }
+
   /* ---------- Sections and cards ---------- */
   main { padding: 8px 0 72px; }
-  section { margin-top: 36px; scroll-margin-top: 170px; }
+  section { margin-top: 36px; scroll-margin-top: 216px; }
   .sec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
   .sec-icon {
     width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none;
@@ -172,7 +188,21 @@
   }
   .card::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; border-radius: 18px 18px 0 0; background: var(--c); }
   .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+  .card.picked { border-color: color-mix(in srgb, var(--teal) 60%, transparent); }
   .top { display: flex; align-items: center; gap: 12px; }
+  .pick {
+    margin-left: auto; flex: none; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 10px 5px 6px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .pick:hover { color: var(--text); }
+  .pick .box { width: 18px; height: 18px; border-radius: 6px; border: 2px solid var(--line); display: grid; place-items: center; }
+  .pick .box svg { width: 12px; height: 12px; stroke-width: 3.5; color: transparent; }
+  .pick[aria-pressed="true"] { color: var(--teal); background: var(--teal-soft); border-color: color-mix(in srgb, var(--teal) 45%, transparent); }
+  .pick[aria-pressed="true"] .box { background: var(--teal); border-color: var(--teal); }
+  .pick[aria-pressed="true"] .box svg { color: #fff; }
+  .pick:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
   .logo {
     width: 44px; height: 44px; border-radius: 12px; flex: none; position: relative; overflow: hidden;
     display: grid; place-items: center; font-weight: 800; font-size: 18px; color: #fff; background: var(--c);
@@ -243,7 +273,7 @@
     .chips::-webkit-scrollbar { display: none; }
     .grid { grid-template-columns: 1fr; }
     .deal { font-size: 20px; }
-    section { scroll-margin-top: 210px; }
+    section { scroll-margin-top: 256px; }
   }
 </style>
 </head>
@@ -283,6 +313,13 @@
         </select>
       </label>
     </div>
+    <div class="mine" aria-live="polite">
+      <i data-lucide="piggy-bank"></i>
+      <span class="mine-label">My savings</span>
+      <b id="mine-total">$0</b>
+      <span class="mine-note" id="mine-note">Check “I'd use it” on the perks you'd actually use</span>
+      <button id="mine-clear" hidden>Clear</button>
+    </div>
     <nav class="chips" id="cats" aria-label="Categories"></nav>
     <div class="count" id="count"></div>
   </div>
@@ -291,7 +328,8 @@
 <main class="wrap" id="list"><div class="status">Loading perks…</div></main>
 <footer>Perks load live from the database, so new ones show up automatically.<br>
   Savings = regular price − student price, per month or year. The long-term total covers the promo length when the deal has an end date, otherwise 4 years of college.
-  Perks whose pricing is flagged as unreliable show "Savings vary" and aren't counted in the total.</footer>
+  Perks whose pricing is flagged as unreliable show "Savings vary" and aren't counted in the total.<br>
+  Your "I'd use it" picks are saved in this browser only.</footer>
 
 <script>
   // Supabase connection. The publishable key is designed to be public;
@@ -444,6 +482,14 @@
   let category = null;          // null = all categories
   const expanded = new Set();   // categories showing all perks
 
+  // "My savings": perk ids the student would use, remembered in this browser.
+  const PICKS_KEY = "myPerks";
+  const picks = new Set((() => {
+    try { return (JSON.parse(localStorage.getItem(PICKS_KEY)) || []).map(String); } catch { return []; }
+  })());
+  const savePicks = () => { try { localStorage.setItem(PICKS_KEY, JSON.stringify([...picks])); } catch {} };
+  const isPicked = (p) => picks.has(String(p.id));
+
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const safeLink = (u) => /^https?:\/\//i.test(u || "") ? u : null;
@@ -474,6 +520,7 @@
         ? money(Math.round(perks.reduce((n, p) => n + (p.save?.amount || 0), 0)))
         : "–";
       render();
+      renderMine();
     } catch (err) {
       document.getElementById("list").innerHTML =
         `<div class="status">Couldn't load perks (${esc(err.message)}). Try refreshing.</div>`;
@@ -523,6 +570,19 @@
     if (window.lucide) lucide.createIcons();
   }
 
+  // Only perks with a dollar amount count toward the total; the rest are noted.
+  function renderMine() {
+    const mine = perks.filter(isPicked);
+    const total = mine.reduce((n, p) => n + (p.save?.amount || 0), 0);
+    const uncounted = mine.filter((p) => !p.save?.amount).length;
+    document.getElementById("mine-total").textContent = money(Math.round(total));
+    document.getElementById("mine-note").textContent = mine.length
+      ? `over your degree from ${mine.length} perk${mine.length === 1 ? "" : "s"}` +
+        (uncounted ? ` · ${uncounted} with no fixed amount, not counted` : "")
+      : "Check “I'd use it” on the perks you'd actually use";
+    document.getElementById("mine-clear").hidden = !mine.length;
+  }
+
   function section(c, items) {
     const [ic, color] = styleFor(c);
     // A single selected category always shows everything.
@@ -550,13 +610,15 @@
     const logo = domain
       ? `<img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128" alt="" loading="lazy" onerror="this.remove()">`
       : "";
-    return `<article class="card" style="--c:${color}">
+    const picked = isPicked(p);
+    return `<article class="card${picked ? " picked" : ""}" style="--c:${color}">
       <div class="top">
         <div class="logo" aria-hidden="true">${initial}${logo}</div>
         <div class="who">
           <h3>${esc(p.name)}</h3>
           ${p.provider && p.provider !== p.name ? `<div class="provider">${esc(p.provider)}</div>` : ""}
         </div>
+        <button class="pick" data-pick="${esc(p.id)}" aria-pressed="${picked}" aria-label="I'd use it: ${esc(p.name)}"><span class="box">${icon("check")}</span>I'd use it</button>
       </div>
       ${p.cost ? `<div class="deal ${dealKind(p)}">${esc(p.cost)}</div>` : ""}
       ${savingsLine(p.save)}
@@ -613,7 +675,25 @@
     render();
   });
 
+  document.getElementById("mine-clear").addEventListener("click", () => {
+    picks.clear();
+    savePicks();
+    render();
+    renderMine();
+  });
+
   document.getElementById("list").addEventListener("click", (e) => {
+    // Toggling a pick updates just that card, so the list doesn't re-render under the cursor.
+    const pick = e.target.closest("button[data-pick]");
+    if (pick) {
+      const id = pick.dataset.pick;
+      picks.has(id) ? picks.delete(id) : picks.add(id);
+      savePicks();
+      pick.setAttribute("aria-pressed", picks.has(id));
+      pick.closest(".card").classList.toggle("picked", picks.has(id));
+      renderMine();
+      return;
+    }
     const b = e.target.closest("button[data-more]");
     if (!b) return;
     const c = b.dataset.more;
