@@ -173,12 +173,13 @@
   main { padding: 8px 0 72px; }
   section { margin-top: 36px; scroll-margin-top: 216px; }
   .sec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-  .sec-icon {
-    width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none;
-    background: color-mix(in srgb, var(--c) 14%, var(--card)); color: var(--c);
+  /* Bold heading with a small hand-drawn squiggle underneath, in the category's color. */
+  .sec-head h2 { position: relative; margin: 0; padding-bottom: 8px; font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
+  .sec-head h2::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: var(--c);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 10' preserveAspectRatio='none'%3E%3Cpath d='M2 6 C 18 2, 30 9, 48 5 S 80 2, 96 6 S 112 7, 118 4' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 10' preserveAspectRatio='none'%3E%3Cpath d='M2 6 C 18 2, 30 9, 48 5 S 80 2, 96 6 S 112 7, 118 4' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
   }
-  .sec-icon svg { width: 22px; height: 22px; }
-  .sec-head h2 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
   .sec-head .n { margin-left: 2px; font-size: 13px; font-weight: 700; color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--card)); padding: 2px 9px; border-radius: 999px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
   .card {
@@ -584,7 +585,7 @@
   }
 
   function section(c, items) {
-    const [ic, color] = styleFor(c);
+    const [, color] = styleFor(c);
     // A single selected category always shows everything.
     const showAll = category === c || expanded.has(c) || items.length <= PER_SECTION;
     const list = showAll ? items : items.slice(0, PER_SECTION);
@@ -595,7 +596,6 @@
       : "";
     return `<section id="${slug(c)}" style="--c:${color}">
       <div class="sec-head">
-        <div class="sec-icon">${icon(ic)}</div>
         <h2>${esc(c)}</h2><span class="n">${items.length}</span>
       </div>
       <div class="grid">${list.map((p) => card(p, color)).join("")}</div>
